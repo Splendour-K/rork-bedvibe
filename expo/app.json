@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "name": "BedVibe",
+    "slug": "qjnz7ectmq5ryvi4j7e4s",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "rork-app",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.rork.qjnz7ectmq5ryvi4j7e4s",
+      "infoPlist": {
+        "NSCameraUsageDescription": "BedVibe uses the camera to snap your daily bed photo for AI scoring.",
+        "NSPhotoLibraryUsageDescription": "BedVibe lets you pick a bed photo from your library when you can't take one live."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "app.rork.qjnz7ectmq5ryvi4j7e4s"
+    },
+    "web": {
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://rork.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "BedVibe uses the camera to snap your daily bed photo for AI scoring."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "BedVibe lets you pick a bed photo from your library.",
+          "cameraPermission": "BedVibe uses the camera to snap your daily bed photo for AI scoring."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#FF8A65"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
