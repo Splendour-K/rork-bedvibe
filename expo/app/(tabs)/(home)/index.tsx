@@ -222,9 +222,6 @@ export default function HomeScreen() {
           <View style={styles.recentSection}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent</Text>
-              <Pressable onPress={() => router.push("/(tabs)/journal")}>
-                <Text style={[styles.sectionLink, { color: theme.accent }]}>See all</Text>
-              </Pressable>
             </View>
             <ScrollView
               horizontal

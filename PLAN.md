@@ -51,6 +51,13 @@
 ### 10. Home polish
 - [x] "Tonight's bedtime story" teaser card on Home.
 
+### 11. Simplify & fix AI (June 2026)
+- [x] Removed Journal tab entirely; Sleep tab now labelled "Coming Soon."
+- [x] Replaced `openai/gpt-4.1-mini` with `openai/gpt-4.1-nano` (4x cheaper, faster, vision-capable).
+- [x] Rewrote `result.tsx` with timeout (45s via AbortController), per-stage loading text, and a `classifyError` helper that maps failures to plain-English messages.
+- [x] Error screen now shows a thumbnail of the photo that failed to analyse and a "Go home" fallback.
+- [x] Updated `PaywallSheet` feature list to match the Journal removal.
+
 ## Files added
 - `expo/app/(tabs)/sleep.tsx`
 - `expo/app/sleep-player.tsx`
@@ -69,8 +76,16 @@
 - `expo/app/(tabs)/(home)/index.tsx` (Tonight's story teaser)
 - `expo/app/(tabs)/(home)/result.tsx` (real share with view-shot)
 - `expo/app/(tabs)/journal.tsx` (Weekly Recap card)
+
+## Files removed
+- `expo/app/(tabs)/journal.tsx`
+
+## Files updated (continued)
 - `expo/app/(tabs)/profile.tsx` (status, sign out always, delete account, in-app legal)
 - `expo/components/PaywallSheet.tsx` (in-app legal links + IAP TODO note)
 - `expo/lib/leaderboard.ts` (no more fake users)
 - `expo/lib/supabase.ts` (deleteOwnProfile)
 - `expo/providers/AuthProvider.tsx` (deleteAccount, local-safe signOut)
+- `expo/app/(tabs)/sleep.tsx` (rewritten as "Coming Soon" placeholder)
+- `expo/lib/ai.ts` (new model `openai/gpt-4.1-nano`, timeout constants)
+- `expo/components/PaywallSheet.tsx` (updated feature list)

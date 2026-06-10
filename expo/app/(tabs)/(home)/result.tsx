@@ -14,7 +14,7 @@ import ShareCard, { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH } from "@/components/Sha
 import { shareEntry } from "@/lib/share-card";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { Home, RotateCcw, Share2, Sparkles } from "lucide-react-native";
+import { Home, RotateCcw, Share2, Sparkles, WifiOff } from "lucide-react-native";
 import Confetti from "@/components/Confetti";
 import AchievementReveal from "@/components/AchievementReveal";
 import { AchievementId } from "@/lib/achievements";
@@ -25,10 +25,7 @@ import { BedEntry, getTitleAndAffirmation } from "@/types";
 import ScoreRing from "@/components/ScoreRing";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { notifySuccess, tapLight } from "@/lib/haptics";
-
-const TOOLKIT_URL = process.env["EXPO_PUBLIC_TOOLKIT_URL"];
-const SECRET_KEY = process.env["EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY"];
-const VISION_MODEL = "openai/gpt-4.1-mini";
+import { TOOLKIT_URL, SECRET_KEY, VISION_MODEL, AI_TIMEOUT_MS } from "@/lib/ai";
 
 interface BedAnalysis {
   score: number;
@@ -36,6 +33,36 @@ interface BedAnalysis {
   symmetryScore: number;
   smoothnessScore: number;
   feedback: string;
+}
+
+type PipelineStage = "resize" | "api-call" | "parse" | "save";
+
+function classifyError(e: unknown, stage: PipelineStage): string {
+  const msg = e instanceof Error ? e.message : String(e ?? "Unknown error");
+
+  if (msg.includes("IMAGE_TOO_LARGE")) {
+    return "The photo is still too large after compression. Try a different image.";
+  }
+  if (msg.includes("AbortError") || msg.includes("timed out") || msg.includes("Timeout")) {
+    return `Analysis timed out (${stage}). Your connection might be slow — please try again.`;
+  }
+  if (msg.includes("Network") || msg.includes("fetch") || msg.includes("ECONN")) {
+    return "Could not reach the analysis service. Check your internet and try again.";
+  }
+  if (msg.startsWith("API 4")) {
+    return `Analysis service unavailable (${msg.slice(0, 60)}). Please try again in a moment.`;
+  }
+  if (msg.startsWith("API 5")) {
+    return "The analysis service is temporarily overloaded. Please try again.";
+  }
+  if (msg.includes("Empty response") || msg.includes("JSON")) {
+    return "The AI returned an unexpected response. Please try a different photo.";
+  }
+  if (stage === "resize") {
+    return `Could not prepare the photo for analysis: ${msg.slice(0, 80)}`;
+  }
+
+  return `Could not analyze your bed (${stage}). Please try again.`;
 }
 
 export default function ResultScreen() {
@@ -46,6 +73,7 @@ export default function ResultScreen() {
 
   const [entry, setEntry] = useState<BedEntry | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [loadingStage, setLoadingStage] = useState<string>("Preparing your photo…");
   const [error, setError] = useState<string | null>(null);
   const successFiredRef = useRef<boolean>(false);
   const [confettiOn, setConfettiOn] = useState<boolean>(false);
@@ -55,11 +83,7 @@ export default function ResultScreen() {
   const shimmer = useRef(new Animated.Value(0)).current;
   const shareRef = useRef<View | null>(null);
 
-  /**
-   * Guard ref — prevents the effect from firing more than once per mount.
-   * Without this, updating `entries` inside analyzeBed would recreate addEntry →
-   * recreate analyzeBed → re-trigger the effect, looping AI calls indefinitely.
-   */
+  /** Guard ref — prevents the effect from firing more than once per mount. */
   const analysisFiredRef = useRef(false);
 
   /** Stable refs so the one-shot effect below doesn't need them in its dep array */
@@ -71,8 +95,23 @@ export default function ResultScreen() {
   const analyzeBed = useCallback(async (uri: string): Promise<void> => {
     setLoading(true);
     setError(null);
+    setLoadingStage("Preparing your photo…");
+
+    let stage: PipelineStage = "resize";
+
     try {
+      // --- Stage 1: Resize & encode the image ---
+      console.log("[result] resizing image", { uri: uri.slice(0, 60) });
       const { base64 } = await resizeForUpload(uri);
+      console.log("[result] resized OK, base64 length", base64.length);
+
+      // --- Stage 2: Call the AI vision model ---
+      stage = "api-call";
+      setLoadingStage("Analyzing your bed…");
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+
+      console.log("[result] calling AI model", VISION_MODEL);
 
       const response = await fetch(
         `${TOOLKIT_URL}/v2/vercel/v1/chat/completions`,
@@ -102,24 +141,50 @@ export default function ResultScreen() {
               },
             ],
           }),
+          signal: controller.signal,
         }
       );
 
+      clearTimeout(timer);
+      console.log("[result] AI response status", response.status);
+
       if (!response.ok) {
-        const errText = await response.text().catch(() => "");
-        throw new Error(`API ${response.status}: ${errText.slice(0, 120)}`);
+        const errText = await response.text().catch(() => "(could not read body)");
+        console.log("[result] AI error body", errText.slice(0, 300));
+        throw new Error(`API ${response.status}: ${errText.slice(0, 200)}`);
       }
 
-      const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+      // --- Stage 3: Parse the response ---
+      stage = "parse";
+      setLoadingStage("Reading your results…");
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
       const content = data.choices?.[0]?.message?.content ?? "";
+      console.log("[result] AI raw content", content.slice(0, 200));
+
       if (!content) throw new Error("Empty response from AI");
 
-      const parsed = JSON.parse(content) as Partial<BedAnalysis>;
+      let parsed: Partial<BedAnalysis>;
+      try {
+        parsed = JSON.parse(content) as Partial<BedAnalysis>;
+      } catch {
+        // Sometimes the model wraps JSON in markdown fences
+        const cleaned = content.replace(/```(?:json)?\s*/g, "").replace(/```\s*$/g, "").trim();
+        parsed = JSON.parse(cleaned) as Partial<BedAnalysis>;
+      }
+
       const clamp = (v: unknown): number =>
         Math.round(Math.min(100, Math.max(0, Number(v) || 0)));
 
       const score = clamp(parsed.score) || 50;
       const { title, affirmation } = getTitleAndAffirmation(score);
+
+      // --- Stage 4: Save the entry ---
+      stage = "save";
+      setLoadingStage("Saving your score…");
+
       const newEntry: BedEntry = {
         id: `${Date.now()}`,
         date: getTodayKeyRef.current(),
@@ -131,11 +196,13 @@ export default function ResultScreen() {
         symmetryScore: clamp(parsed.symmetryScore) || score,
         smoothnessScore: clamp(parsed.smoothnessScore) || score,
       };
+
       await addEntryRef.current(newEntry);
       setEntry(newEntry);
+      console.log("[result] analysis complete, score", score);
     } catch (e) {
-      console.log("[result] analysis failed", e);
-      setError("Could not analyze your bed. Please try again.");
+      console.log("[result] analysis failed at stage", stage, e);
+      setError(classifyError(e, stage));
       // Allow retry by resetting the guard
       analysisFiredRef.current = false;
     } finally {
@@ -148,7 +215,7 @@ export default function ResultScreen() {
     if (!imageUri || analysisFiredRef.current) return;
     analysisFiredRef.current = true;
     analyzeBed(imageUri);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageUri]); // analyzeBed is stable (empty deps), safe to omit
 
   /** Look up an existing entry by id (e.g. viewing history) */
@@ -200,7 +267,10 @@ export default function ResultScreen() {
   };
 
   if (loading) {
-    const shimmerTranslate = shimmer.interpolate({ inputRange: [0, 1], outputRange: [-200, 200] });
+    const shimmerTranslate = shimmer.interpolate({
+      inputRange: [0, 1],
+      outputRange: [-200, 200],
+    });
     return (
       <View style={[styles.fill, { backgroundColor: theme.background }]}>
         <LinearGradient
@@ -212,15 +282,22 @@ export default function ResultScreen() {
         <SafeAreaView style={styles.fill} edges={["top", "bottom"]}>
           <View style={styles.loadingContent}>
             <Sparkles size={32} color={theme.text} />
-            <Text style={[styles.loadingTitle, { color: theme.text }]}>Analyzing your vibe</Text>
-            <Text style={[styles.loadingBody, { color: theme.textMuted }]}>
-              Checking edges, symmetry & smoothness…
+            <Text style={[styles.loadingTitle, { color: theme.text }]}>
+              Analyzing your vibe
             </Text>
-            <View style={[styles.shimmerTrack, { backgroundColor: theme.surfaceAlt }]}>
+            <Text style={[styles.loadingBody, { color: theme.textMuted }]}>
+              {loadingStage}
+            </Text>
+            <View
+              style={[styles.shimmerTrack, { backgroundColor: theme.surfaceAlt }]}
+            >
               <Animated.View
                 style={[
                   styles.shimmerBar,
-                  { backgroundColor: theme.text, transform: [{ translateX: shimmerTranslate }] },
+                  {
+                    backgroundColor: theme.text,
+                    transform: [{ translateX: shimmerTranslate }],
+                  },
                 ]}
               />
             </View>
@@ -233,18 +310,70 @@ export default function ResultScreen() {
 
   if (error) {
     return (
-      <SafeAreaView style={[styles.fill, { backgroundColor: theme.background }]} edges={["top"]}>
+      <SafeAreaView
+        style={[styles.fill, { backgroundColor: theme.background }]}
+        edges={["top"]}
+      >
         <View style={styles.errorContent}>
-          <Text style={[styles.errorTitle, { color: theme.text }]}>Hmm, that didn't work</Text>
-          <Text style={[styles.errorBody, { color: theme.textMuted }]}>{error}</Text>
-          <Pressable
-            onPress={() => imageUri && analyzeBed(imageUri)}
-            style={[styles.errorBtn, { backgroundColor: theme.text }]}
-            testID="retry"
-          >
-            <RotateCcw size={18} color={theme.background} />
-            <Text style={[styles.errorBtnText, { color: theme.background }]}>Try again</Text>
-          </Pressable>
+          <View style={styles.errorIconWrap}>
+            <WifiOff size={28} color={theme.textMuted} />
+          </View>
+          <Text style={[styles.errorTitle, { color: theme.text }]}>
+            Hmm, that didn't work
+          </Text>
+          <Text style={[styles.errorBody, { color: theme.textMuted }]}>
+            {error}
+          </Text>
+          <View style={styles.errorActions}>
+            <Pressable
+              onPress={() => {
+                tapLight();
+                router.replace("/(tabs)/(home)");
+              }}
+              style={({ pressed }) => [
+                styles.errorBtnGhost,
+                {
+                  borderColor: theme.border,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
+            >
+              <Home size={18} color={theme.text} />
+              <Text style={[styles.errorBtnGhostText, { color: theme.text }]}>
+                Go home
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                tapLight();
+                if (imageUri) analyzeBed(imageUri);
+              }}
+              style={({ pressed }) => [
+                styles.errorBtn,
+                {
+                  backgroundColor: theme.text,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                },
+              ]}
+              testID="retry"
+            >
+              <RotateCcw size={18} color={theme.background} />
+              <Text
+                style={[styles.errorBtnText, { color: theme.background }]}
+              >
+                Try again
+              </Text>
+            </Pressable>
+          </View>
+          {imageUri ? (
+            <View style={styles.errorPreview}>
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.errorPreviewImage}
+                resizeMode="cover"
+              />
+            </View>
+          ) : null}
         </View>
       </SafeAreaView>
     );
@@ -252,9 +381,14 @@ export default function ResultScreen() {
 
   if (!entry) {
     return (
-      <SafeAreaView style={[styles.fill, { backgroundColor: theme.background }]} edges={["top"]}>
+      <SafeAreaView
+        style={[styles.fill, { backgroundColor: theme.background }]}
+        edges={["top"]}
+      >
         <View style={styles.errorContent}>
-          <Text style={[styles.errorBody, { color: theme.textMuted }]}>No result found.</Text>
+          <Text style={[styles.errorBody, { color: theme.textMuted }]}>
+            No result found.
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -263,16 +397,26 @@ export default function ResultScreen() {
   return (
     <View style={[styles.fill, { backgroundColor: theme.background }]}>
       <Confetti active={confettiOn} colors={theme.ringGradient} />
-      <ScrollView contentContainerStyle={{ paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.imageWrap}>
-          <Image source={{ uri: entry.imageUri }} style={styles.image} resizeMode="cover" />
+          <Image
+            source={{ uri: entry.imageUri }}
+            style={styles.image}
+            resizeMode="cover"
+          />
           <LinearGradient
             colors={["rgba(0,0,0,0)", theme.background]}
             style={styles.imageFade}
           />
           <SafeAreaView style={styles.imageTopBar} edges={["top"]}>
             <Pressable
-              onPress={() => { tapLight(); router.replace("/(tabs)/(home)"); }}
+              onPress={() => {
+                tapLight();
+                router.replace("/(tabs)/(home)");
+              }}
               style={styles.imageBackBtn}
               testID="back-home-top"
             >
@@ -288,25 +432,77 @@ export default function ResultScreen() {
           </SafeAreaView>
         </View>
 
-        <Animated.View style={{ opacity: fadeIn, transform: [{ translateY: fadeIn.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }}>
+        <Animated.View
+          style={{
+            opacity: fadeIn,
+            transform: [
+              {
+                translateY: fadeIn.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [12, 0],
+                }),
+              },
+            ],
+          }}
+        >
           <View style={styles.contentWrap}>
             <View style={styles.ringWrap}>
               <ScoreRing score={entry.score} size={200} strokeWidth={16} />
             </View>
 
-            <Text style={[styles.title, { color: theme.text }]}>{entry.title}</Text>
-            <Text style={[styles.affirm, { color: theme.textMuted }]}>{entry.affirmation}</Text>
+            <Text style={[styles.title, { color: theme.text }]}>
+              {entry.title}
+            </Text>
+            <Text style={[styles.affirm, { color: theme.textMuted }]}>
+              {entry.affirmation}
+            </Text>
 
-            <View style={[styles.breakdownCard, { backgroundColor: theme.card, borderColor: theme.border, shadowColor: theme.shadow }]}>
+            <View
+              style={[
+                styles.breakdownCard,
+                {
+                  backgroundColor: theme.card,
+                  borderColor: theme.border,
+                  shadowColor: theme.shadow,
+                },
+              ]}
+            >
               <View style={styles.breakdownHeader}>
-                <Text style={[styles.breakdownTitle, { color: theme.text }]}>Breakdown</Text>
-                <View style={[styles.dateBadge, { backgroundColor: theme.surfaceAlt }]}>
-                  <Text style={[styles.dateBadgeText, { color: theme.textMuted }]}>{entry.date}</Text>
+                <Text style={[styles.breakdownTitle, { color: theme.text }]}>
+                  Breakdown
+                </Text>
+                <View
+                  style={[
+                    styles.dateBadge,
+                    { backgroundColor: theme.surfaceAlt },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dateBadgeText,
+                      { color: theme.textMuted },
+                    ]}
+                  >
+                    {entry.date}
+                  </Text>
                 </View>
               </View>
-              <BreakdownRow label="Edges" value={entry.edgesScore} theme={theme} />
-              <BreakdownRow label="Symmetry" value={entry.symmetryScore} theme={theme} />
-              <BreakdownRow label="Smoothness" value={entry.smoothnessScore} theme={theme} last />
+              <BreakdownRow
+                label="Edges"
+                value={entry.edgesScore}
+                theme={theme}
+              />
+              <BreakdownRow
+                label="Symmetry"
+                value={entry.symmetryScore}
+                theme={theme}
+              />
+              <BreakdownRow
+                label="Smoothness"
+                value={entry.smoothnessScore}
+                theme={theme}
+                last
+              />
             </View>
 
             <View style={styles.actions}>
@@ -314,18 +510,35 @@ export default function ResultScreen() {
                 onPress={handleShare}
                 style={({ pressed }) => [
                   styles.actionPrimary,
-                  { backgroundColor: theme.text, transform: [{ scale: pressed ? 0.98 : 1 }] },
+                  {
+                    backgroundColor: theme.text,
+                    transform: [{ scale: pressed ? 0.98 : 1 }],
+                  },
                 ]}
                 testID="share-bed"
               >
                 <Share2 size={18} color={theme.background} />
-                <Text style={[styles.actionPrimaryText, { color: theme.background }]}>Share my vibe</Text>
+                <Text
+                  style={[
+                    styles.actionPrimaryText,
+                    { color: theme.background },
+                  ]}
+                >
+                  Share my vibe
+                </Text>
               </Pressable>
               <Pressable
-                onPress={() => { tapLight(); router.replace("/(tabs)/(home)"); }}
+                onPress={() => {
+                  tapLight();
+                  router.replace("/(tabs)/(home)");
+                }}
                 style={({ pressed }) => [
                   styles.actionGhost,
-                  { borderColor: theme.border, backgroundColor: theme.surface, transform: [{ scale: pressed ? 0.98 : 1 }] },
+                  {
+                    borderColor: theme.border,
+                    backgroundColor: theme.surface,
+                    transform: [{ scale: pressed ? 0.98 : 1 }],
+                  },
                 ]}
               >
                 <Home size={18} color={theme.text} />
@@ -335,17 +548,29 @@ export default function ResultScreen() {
         </Animated.View>
       </ScrollView>
       <View style={styles.offscreen} pointerEvents="none">
-        <View ref={shareRef} collapsable={false} style={{ width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT }}>
+        <View
+          ref={shareRef}
+          collapsable={false}
+          style={{ width: SHARE_CARD_WIDTH, height: SHARE_CARD_HEIGHT }}
+        >
           <ShareCard entry={entry} userName={profile.name} />
         </View>
       </View>
       {revealIds.length > 0 && (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.35)" }]} />
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: "rgba(0,0,0,0.35)" },
+            ]}
+          />
           <AchievementReveal
             ids={revealIds}
             theme={theme}
-            onDismiss={() => { tapLight(); setRevealIds([]); }}
+            onDismiss={() => {
+              tapLight();
+              setRevealIds([]);
+            }}
           />
         </View>
       )}
@@ -353,7 +578,17 @@ export default function ResultScreen() {
   );
 }
 
-function BreakdownRow({ label, value, theme, last }: { label: string; value: number; theme: ReturnType<typeof getTheme>; last?: boolean }) {
+function BreakdownRow({
+  label,
+  value,
+  theme,
+  last,
+}: {
+  label: string;
+  value: number;
+  theme: ReturnType<typeof getTheme>;
+  last?: boolean;
+}) {
   const fillAnim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(fillAnim, {
@@ -363,14 +598,41 @@ function BreakdownRow({ label, value, theme, last }: { label: string; value: num
       useNativeDriver: false,
     }).start();
   }, [value, fillAnim]);
-  const widthInterp = fillAnim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] });
+  const widthInterp = fillAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ["0%", "100%"],
+  });
   return (
-    <View style={[breakdownStyles.row, last ? null : { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
-      <Text style={[breakdownStyles.label, { color: theme.text }]}>{label}</Text>
-      <View style={[breakdownStyles.barTrack, { backgroundColor: theme.progressBackground }]}>
-        <Animated.View style={[breakdownStyles.barFill, { backgroundColor: theme.text, width: widthInterp }]} />
+    <View
+      style={[
+        breakdownStyles.row,
+        last
+          ? null
+          : {
+              borderBottomColor: theme.border,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+            },
+      ]}
+    >
+      <Text style={[breakdownStyles.label, { color: theme.text }]}>
+        {label}
+      </Text>
+      <View
+        style={[
+          breakdownStyles.barTrack,
+          { backgroundColor: theme.progressBackground },
+        ]}
+      >
+        <Animated.View
+          style={[
+            breakdownStyles.barFill,
+            { backgroundColor: theme.text, width: widthInterp },
+          ]}
+        />
       </View>
-      <Text style={[breakdownStyles.value, { color: theme.text }]}>{value}</Text>
+      <Text style={[breakdownStyles.value, { color: theme.text }]}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -409,7 +671,13 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   imageWrap: { width: "100%", height: 360 },
   image: { width: "100%", height: "100%" },
-  imageFade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 80 },
+  imageFade: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 80,
+  },
   imageTopBar: {
     position: "absolute",
     top: 0,
@@ -543,6 +811,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: 32,
   },
+  errorIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(128,128,128,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
   errorTitle: {
     fontSize: 22,
     fontWeight: "800",
@@ -552,7 +829,14 @@ const styles = StyleSheet.create({
   errorBody: {
     fontSize: 15,
     textAlign: "center",
+    lineHeight: 21,
     marginBottom: 24,
+    maxWidth: 300,
+  },
+  errorActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 20,
   },
   errorBtn: {
     flexDirection: "row",
@@ -565,6 +849,31 @@ const styles = StyleSheet.create({
   errorBtnText: {
     fontSize: 15,
     fontWeight: "800",
+  },
+  errorBtnGhost: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 22,
+    paddingVertical: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  errorBtnGhostText: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  errorPreview: {
+    width: 120,
+    height: 90,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(128,128,128,0.2)",
+  },
+  errorPreviewImage: {
+    width: "100%",
+    height: "100%",
   },
   offscreen: {
     position: "absolute",

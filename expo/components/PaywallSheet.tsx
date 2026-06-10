@@ -11,7 +11,7 @@ import { notifySuccess, tapLight, tapMedium } from "@/lib/haptics";
 const FEATURES = [
   { icon: Palette, title: "Premium themes", body: "Midnight, Sunrise, Pirate Cove and more." },
   { icon: Globe, title: "Global leaderboard", body: "Climb the ranks with bed-makers worldwide." },
-  { icon: Sparkles, title: "Insights & journal", body: "Patterns and personal records that evolve with you." },
+  { icon: Sparkles, title: "AI bed insights", body: "Patterns and personal records that evolve with you." },
   { icon: Zap, title: "Wake-up alarm", body: "A gentle nudge to start your bed routine." },
 ];
 
