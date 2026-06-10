@@ -10,7 +10,6 @@ import { StatusBar } from "expo-status-bar";
 import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import PaywallSheet from "@/components/PaywallSheet";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -80,7 +79,6 @@ export default function RootLayout() {
                 <View style={{ flex: 1 }}>
                   <RootLayoutNav />
                   <NavigationGate />
-                  <PaywallSheet />
                   <StatusBar style="auto" />
                 </View>
               </GestureHandlerRootView>

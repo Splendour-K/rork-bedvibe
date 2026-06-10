@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { AlertTriangle, ArrowUpRight, Camera, Flame, Lock, Moon, Sparkles } from "lucide-react-native";
+import { AlertTriangle, ArrowUpRight, Camera, Flame, Moon, Sparkles } from "lucide-react-native";
 import { tonightsStory, formatDuration } from "@/constants/sleep-content";
 import { useApp } from "@/providers/AppProvider";
 import { getTheme, radius, spacing } from "@/constants/colors";
@@ -29,7 +29,7 @@ function greetingFor(date: Date): string {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { profile, hasTodayEntry, todayEntry, entries, showPaywall } = useApp();
+  const { profile, hasTodayEntry, todayEntry, entries } = useApp();
   const tonight = tonightsStory();
   const theme = getTheme(profile.theme);
   const greeting = greetingFor(new Date());
@@ -180,8 +180,6 @@ export default function HomeScreen() {
 
         <Pressable
           onPress={() => {
-            const locked = !profile.isPremium && !tonight.freePreview;
-            if (locked) { tapLight(); showPaywall(`sleep:${tonight.id}`); return; }
             tapMedium();
             router.push({ pathname: "/sleep-player", params: { id: tonight.id } });
           }}
@@ -201,16 +199,9 @@ export default function HomeScreen() {
               <Moon size={11} color="#F5C97B" />
               <Text style={styles.tonightPillText}>TONIGHT'S STORY</Text>
             </View>
-            {!profile.isPremium && !tonight.freePreview ? (
-              <View style={styles.tonightLock}>
-                <Lock size={11} color="#F5C97B" />
-                <Text style={styles.tonightLockText}>Premium</Text>
-              </View>
-            ) : (
-              <View style={styles.tonightArrow}>
-                <ArrowUpRight size={16} color="#FFF" />
-              </View>
-            )}
+            <View style={styles.tonightArrow}>
+              <ArrowUpRight size={16} color="#FFF" />
+            </View>
           </View>
           <View style={styles.tonightBottom}>
             <Text style={styles.tonightTitle}>{tonight.title}</Text>

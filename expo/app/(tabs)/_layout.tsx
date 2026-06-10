@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, Trophy, User, Moon } from "lucide-react-native";
+import { Home, Trophy, User } from "lucide-react-native";
 import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { BlurView } from "expo-blur";
@@ -50,18 +50,6 @@ export default function TabLayout() {
         }}
       />
 
-      <Tabs.Screen
-        name="sleep"
-        options={{
-          title: "Sleep",
-          tabBarIcon: ({ color, focused }) => (
-            <View style={styles.iconWrap}>
-              <Moon size={24} color={color} strokeWidth={focused ? 2.4 : 2} />
-              {focused && <View style={[styles.dot, { backgroundColor: color }]} />}
-            </View>
-          ),
-        }}
-      />
       <Tabs.Screen
         name="leaderboard"
         options={{

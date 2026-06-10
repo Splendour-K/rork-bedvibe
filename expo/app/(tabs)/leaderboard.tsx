@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Crown, Lock, Medal, Trophy } from "lucide-react-native";
+import { Crown, Medal, Trophy } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/providers/AppProvider";
 import { getTheme, radius, spacing } from "@/constants/colors";
@@ -11,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { tapLight } from "@/lib/haptics";
 
 export default function LeaderboardScreen() {
-  const { profile, showPaywall } = useApp();
+  const { profile } = useApp();
   const theme = getTheme(profile.theme);
   const [windowFilter, setWindowFilter] = useState<LeaderboardWindow>("week");
 
@@ -77,28 +77,6 @@ export default function LeaderboardScreen() {
             theme={theme}
           />
         </View>
-
-        {!profile.isPremium && (
-          <Pressable
-            onPress={() => { tapLight(); showPaywall("leaderboard"); }}
-            style={({ pressed }) => [
-              styles.upgradeCard,
-              { backgroundColor: theme.text, transform: [{ scale: pressed ? 0.99 : 1 }] },
-            ]}
-            testID="upgrade-leaderboard"
-          >
-            <View style={[styles.upgradeIcon, { backgroundColor: theme.accent }]}>
-              <Trophy size={20} color="#FFF" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.upgradeTitle, { color: theme.background }]}>Join the global board</Text>
-              <Text style={[styles.upgradeBody, { color: theme.background, opacity: 0.7 }]}>
-                Premium members appear with their score, streak and crown.
-              </Text>
-            </View>
-            <Text style={[styles.upgradeCta, { color: theme.accent }]}>Go Pro</Text>
-          </Pressable>
-        )}
 
         {top3.length >= 3 && (
           <View style={styles.podium}>

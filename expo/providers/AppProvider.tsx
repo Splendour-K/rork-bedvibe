@@ -60,7 +60,7 @@ function genUserId(): string {
 
 const defaultProfile: UserProfile = {
   name: "You",
-  isPremium: false,
+  isPremium: true,
   theme: "linen",
   reminderEnabled: false,
   reminderTime: "08:00",
@@ -210,10 +210,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
     [profile, persistProfile]
   );
 
-  const togglePremium = useCallback(async (): Promise<void> => {
-    await updateProfile({ isPremium: !profile.isPremium });
-  }, [profile, updateProfile]);
-
   const showPaywall = useCallback((reason?: string): void => {
     notifyWarning();
     setPaywallReason(reason ?? null);
@@ -267,7 +263,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       todayEntry,
       addEntry,
       updateProfile,
-      togglePremium,
       paywallVisible,
       paywallReason,
       showPaywall,
@@ -279,6 +274,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
       pendingAchievements,
       consumePendingAchievements,
     }),
-    [entries, profile, isLoading, hasTodayEntry, todayEntry, addEntry, updateProfile, togglePremium, paywallVisible, paywallReason, showPaywall, hidePaywall, setReminder, setAlarm, earnedAchievements, pendingAchievements, consumePendingAchievements]
+    [entries, profile, isLoading, hasTodayEntry, todayEntry, addEntry, updateProfile, paywallVisible, paywallReason, showPaywall, hidePaywall, setReminder, setAlarm, earnedAchievements, pendingAchievements, consumePendingAchievements]
   );
 });

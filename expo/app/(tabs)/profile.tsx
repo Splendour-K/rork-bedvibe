@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import { Bell, Check, CloudOff, Clock, Crown, Edit3, FileText, Heart, Info, Lock, LogOut, Mail, Palette, Shield, Sparkles, Star, Trash2, Wifi, Zap } from "lucide-react-native";
+import { Bell, Check, CloudOff, Clock, Crown, Edit3, FileText, Heart, Info, Lock, LogOut, Mail, Palette, Shield, Sparkles, Trash2, Wifi, Zap } from "lucide-react-native";
 import { router } from "expo-router";
 import * as Linking from "expo-linking";
 import { useApp } from "@/providers/AppProvider";
@@ -23,11 +23,9 @@ function formatTime(time: string): string {
 }
 
 export default function ProfileScreen() {
-  const { profile, togglePremium, updateProfile, showPaywall, setReminder } = useApp();
-  const { email, signOut, isConfigured } = useAuth();
+  const { profile, updateProfile, showPaywall, setReminder } = useApp();
+  const { email, signOut, isConfigured, deleteAccount } = useAuth();
   const theme = getTheme(profile.theme);
-
-  const { deleteAccount } = useAuth();
 
   const handleSignOut = useCallback(() => {
     tapLight();
@@ -85,15 +83,10 @@ export default function ProfileScreen() {
 
   const handleThemeChange = useCallback(
     (key: ThemeName) => {
-      const meta = themeMeta[key];
-      if (meta.isPremium && !profile.isPremium) {
-        showPaywall(`theme:${key}`);
-        return;
-      }
       tapLight();
       updateProfile({ theme: key });
     },
-    [profile.isPremium, showPaywall, updateProfile]
+    [updateProfile]
   );
 
   const handleReminderToggle = useCallback(
@@ -120,12 +113,8 @@ export default function ProfileScreen() {
 
   const handleAlarmTap = useCallback(() => {
     tapLight();
-    if (!profile.isPremium) {
-      showPaywall("alarm");
-      return;
-    }
     router.push("/alarm");
-  }, [profile.isPremium, showPaywall]);
+  }, []);
 
   const handleTimeChange = useCallback(
     async (_e: DateTimePickerEvent, date?: Date) => {
@@ -202,15 +191,9 @@ export default function ProfileScreen() {
                 <Edit3 size={14} color={theme.textSubtle} />
               </Pressable>
             )}
-            <View style={[styles.badge, { backgroundColor: profile.isPremium ? theme.accentSoft : theme.surfaceAlt }]}>
-              {profile.isPremium ? (
-                <>
-                  <Crown size={12} color={theme.accent} fill={theme.accent} />
-                  <Text style={[styles.badgeText, { color: theme.accent }]}>Premium member</Text>
-                </>
-              ) : (
-                <Text style={[styles.badgeText, { color: theme.textMuted }]}>Free plan</Text>
-              )}
+            <View style={[styles.badge, { backgroundColor: theme.accentSoft }]}>
+              <Crown size={12} color={theme.accent} fill={theme.accent} />
+              <Text style={[styles.badgeText, { color: theme.accent }]}>Premium member</Text>
             </View>
             {email && (
               <Text style={[styles.email, { color: theme.textSubtle }]} numberOfLines={1}>{email}</Text>
@@ -231,34 +214,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {!profile.isPremium ? (
-          <Pressable
-            onPress={() => { tapMedium(); showPaywall("profile"); }}
-            style={({ pressed }) => [
-              styles.upgradeCard,
-              { backgroundColor: theme.text, transform: [{ scale: pressed ? 0.99 : 1 }] },
-            ]}
-            testID="open-paywall"
-          >
-            <View style={[styles.upgradeIcon, { backgroundColor: theme.accent }]}>
-              <Star size={18} color="#FFF" fill="#FFF" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.upgradeTitle, { color: theme.background }]}>Unlock BedVibe Premium</Text>
-              <Text style={[styles.upgradeBody, { color: theme.background }]}>Themes, leaderboard, coach & more.</Text>
-            </View>
-            <Text style={[styles.upgradeCta, { color: theme.accent }]}>View</Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={() => { tapLight(); togglePremium(); }}
-            style={[styles.devToggle, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
-            testID="premium-toggle"
-          >
-            <Sparkles size={14} color={theme.textMuted} />
-            <Text style={[styles.devToggleText, { color: theme.textMuted }]}>Dev: turn off Premium</Text>
-          </Pressable>
-        )}
+
 
         <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border, shadowColor: theme.shadow }]}>
           <View style={styles.sectionHead}>
@@ -355,20 +311,25 @@ export default function ProfileScreen() {
             <Text style={[styles.rowChev, { color: theme.textSubtle }]}>›</Text>
           </Pressable>
 
-          <PremiumRow
-            icon={<Zap size={16} color={profile.alarmEnabled ? theme.accent : theme.text} />}
-            title="Wake-up alarm"
-            sub={
-              profile.isPremium
-                ? profile.alarmEnabled
-                  ? `On · ${formatTime(profile.alarmTime)}`
-                  : "Tap to set up your wake-up nudge"
-                : "Premium · Start your bed routine on time"
-            }
-            theme={theme}
+          <Pressable
             onPress={handleAlarmTap}
-            isPremium={profile.isPremium}
-          />
+            style={[styles.row, { borderTopColor: theme.border, borderTopWidth: StyleSheet.hairlineWidth }]}
+          >
+            <View style={styles.rowLeft}>
+              <View style={[styles.rowIcon, { backgroundColor: theme.surfaceAlt }]}>
+                <Zap size={16} color={profile.alarmEnabled ? theme.accent : theme.text} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: theme.text }]}>Wake-up alarm</Text>
+                <Text style={[styles.rowSub, { color: theme.textMuted }]}>
+                  {profile.alarmEnabled
+                    ? `On · ${formatTime(profile.alarmTime)}`
+                    : "Tap to set up your wake-up nudge"}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.rowChev, { color: theme.textSubtle }]}>›</Text>
+          </Pressable>
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.card, borderColor: theme.border, shadowColor: theme.shadow }]}>
@@ -434,17 +395,6 @@ export default function ProfileScreen() {
             <Text style={[styles.rowChev, { color: theme.textSubtle }]}>›</Text>
           </Pressable>
         </View>
-
-        {!profile.isPremium && (
-          <Pressable
-            onPress={() => { tapLight(); togglePremium(); }}
-            style={[styles.devToggle, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]}
-            testID="dev-premium"
-          >
-            <Sparkles size={14} color={theme.textMuted} />
-            <Text style={[styles.devToggleText, { color: theme.textMuted }]}>Dev: simulate Premium</Text>
-          </Pressable>
-        )}
 
         <Pressable
           onPress={handleSignOut}

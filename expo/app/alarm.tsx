@@ -61,12 +61,6 @@ export default function AlarmScreen() {
   const [pickerVisible, setPickerVisible] = useState<boolean>(false);
   const [dirty, setDirty] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (!profile.isPremium) {
-      router.back();
-    }
-  }, [profile.isPremium]);
-
   const toggleDay = useCallback((idx: number) => {
     tapLight();
     setDays((prev) => {

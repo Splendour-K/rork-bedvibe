@@ -45,18 +45,24 @@
 - [x] Linked from Profile and from the Paywall footer.
 
 ### 9. Premium unlock
-- [x] Paywall keeps current design and unlocks locally.
-- [x] Code comment marks where to wire real IAP (RevenueCat / react-native-iap in EAS build).
+- [x] Paywall removed for v1 App Store launch (real IAP requires EAS build; all features free until then).
 
 ### 10. Home polish
 - [x] "Tonight's bedtime story" teaser card on Home.
 
 ### 11. Simplify & fix AI (June 2026)
-- [x] Removed Journal tab entirely; Sleep tab now labelled "Coming Soon."
+- [x] Removed Journal tab entirely; Sleep tab removed to avoid placeholder-content rejection.
 - [x] Replaced `openai/gpt-4.1-mini` with `openai/gpt-4.1-nano` (4x cheaper, faster, vision-capable).
 - [x] Rewrote `result.tsx` with timeout (45s via AbortController), per-stage loading text, and a `classifyError` helper that maps failures to plain-English messages.
 - [x] Error screen now shows a thumbnail of the photo that failed to analyse and a "Go home" fallback.
-- [x] Updated `PaywallSheet` feature list to match the Journal removal.
+
+### 12. App Store v1 launch prep (June 2026)
+- [x] Removed dev toggle buttons from Profile ("Dev: simulate Premium" and "Dev: turn off Premium").
+- [x] Made all premium features free for v1 — removed premium gates from Home, Leaderboard, Profile, Alarm, Onboarding.
+- [x] Removed `togglePremium` from AppProvider and all callers.
+- [x] Removed PaywallSheet from app layout and deleted the component.
+- [x] Removed Sleep tab entirely (placeholder content risks App Store rejection).
+- [x] Added `PrivacyInfo.xcprivacy` manifest with collected data types and required reason APIs.
 
 ## Files added
 - `expo/app/(tabs)/sleep.tsx`
@@ -69,23 +75,24 @@
 - `expo/constants/sleep-content.ts`
 - `expo/lib/share-card.ts`
 - `expo/lib/weekly-recap.ts`
-
-## Files updated
-- `expo/app/_layout.tsx` (registered new routes)
-- `expo/app/(tabs)/_layout.tsx` (added Sleep tab)
-- `expo/app/(tabs)/(home)/index.tsx` (Tonight's story teaser)
-- `expo/app/(tabs)/(home)/result.tsx` (real share with view-shot)
-- `expo/app/(tabs)/journal.tsx` (Weekly Recap card)
+- `expo/PrivacyInfo.xcprivacy` (iOS privacy manifest)
 
 ## Files removed
 - `expo/app/(tabs)/journal.tsx`
+- `expo/app/(tabs)/sleep.tsx` (placeholder tab)
+- `expo/components/PaywallSheet.tsx`
 
-## Files updated (continued)
-- `expo/app/(tabs)/profile.tsx` (status, sign out always, delete account, in-app legal)
-- `expo/components/PaywallSheet.tsx` (in-app legal links + IAP TODO note)
+## Files updated
+- `expo/app/_layout.tsx` (registered new routes)
+- `expo/app/(tabs)/_layout.tsx` (added/removed Sleep tab, cleaned imports)
+- `expo/app/(tabs)/(home)/index.tsx` (Tonight's story, removed premium gates)
+- `expo/app/(tabs)/(home)/result.tsx` (real share with view-shot)
+- `expo/app/(tabs)/leaderboard.tsx` (removed premium upgrade card)
+- `expo/app/alarm.tsx` (removed premium redirect)
+- `expo/app/onboarding.tsx` (removed togglePremium usage)
+- `expo/app/(tabs)/profile.tsx` (status, sign out always, delete account, in-app legal, removed dev toggles/premium gates)
+- `expo/providers/AppProvider.tsx` (default isPremium true, removed togglePremium)
 - `expo/lib/leaderboard.ts` (no more fake users)
 - `expo/lib/supabase.ts` (deleteOwnProfile)
 - `expo/providers/AuthProvider.tsx` (deleteAccount, local-safe signOut)
-- `expo/app/(tabs)/sleep.tsx` (rewritten as "Coming Soon" placeholder)
 - `expo/lib/ai.ts` (new model `openai/gpt-4.1-nano`, timeout constants)
-- `expo/components/PaywallSheet.tsx` (updated feature list)

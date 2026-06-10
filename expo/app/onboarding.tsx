@@ -91,7 +91,7 @@ const REMINDER_OPTIONS: { id: string; label: string; time: string }[] = [
 ];
 
 export default function OnboardingScreen() {
-  const { profile, updateProfile, setReminder, togglePremium } = useApp();
+  const { profile, updateProfile, setReminder } = useApp();
   const theme = getTheme(profile.theme);
 
   const [step, setStep] = useState<StepKey>("welcome");
@@ -181,9 +181,8 @@ export default function OnboardingScreen() {
 
   const handleUnlockPremium = useCallback(async () => {
     tapMedium();
-    await togglePremium();
     finishOnboarding(true);
-  }, [finishOnboarding, togglePremium]);
+  }, [finishOnboarding]);
 
   const renderStep = () => {
     switch (step) {
